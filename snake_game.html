@@ -1,0 +1,301 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <title>Snake Game Enhanced</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #222;
+    }
+    canvas {
+      border: 2px solid #fff;
+    }
+  </style>
+</head>
+<body>
+<script>
+// Global variables
+let snake;
+let food;
+let powerUp;
+let scl = 20;
+let score = 0;
+let highScore = localStorage.getItem('snakeHighScore') ? parseInt(localStorage.getItem('snakeHighScore')) : 0;
+let gameState = 'start';
+let paused = false;
+let baseFrameRate = 10;
+let powerUpActive = false;
+let powerUpTimer = 0;
+let touchStartX, touchStartY;
+
+function setup() {
+  createCanvas(600, 600);
+  snake = new Snake();
+  frameRate(baseFrameRate);
+  pickFoodLocation();
+  powerUp = null;
+}
+
+function pickFoodLocation() {
+  let cols = floor(width / scl);
+  let rows = floor(height / scl);
+  food = createVector(floor(random(cols)), floor(random(rows)));
+  food.mult(scl);
+}
+
+function spawnPowerUp() {
+  if (!powerUp && random() < 0.02) { // 2% chance per frame
+    let cols = floor(width / scl);
+    let rows = floor(height / scl);
+    powerUp = createVector(floor(random(cols)), floor(random(rows)));
+    powerUp.mult(scl);
+  }
+}
+
+function draw() {
+  // Draw grid background
+  background(51);
+  stroke(100);
+  strokeWeight(1);
+  for (let x = 0; x < width; x += scl) {
+    line(x, 0, x, height);
+  }
+  for (let y = 0; y < height; y += scl) {
+    line(0, y, width, y);
+  }
+  noStroke();
+
+  if (gameState === 'start') {
+    fill(255);
+    textSize(32);
+    textAlign(CENTER, CENTER);
+    text("Snake Game", width / 2, height / 2 - 50);
+    textSize(20);
+    text("Press ENTER to Start", width / 2, height / 2);
+    text("Use ARROWS, WASD, or Swipe; P to pause", width / 2, height / 2 + 30);
+    text("High Score: " + highScore, width / 2, height / 2 + 60);
+  } else if (gameState === 'playing' && !paused) {
+    // Update frame rate based on score and power-up
+    frameRate(powerUpActive ? baseFrameRate * 0.6 : baseFrameRate + score * 0.2);
+
+    if (snake.eat(food)) {
+      pickFoodLocation();
+      score++;
+      // Play sound (uncomment if p5.sound is included)
+      // if (eatSound) eatSound.play();
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('snakeHighScore', highScore);
+      }
+    }
+    if (powerUp && snake.eat(powerUp)) {
+      powerUp = null;
+      powerUpActive = true;
+      powerUpTimer = 100; // ~10 seconds at base frame rate
+      // Play sound (uncomment if p5.sound is included)
+      // if (powerUpSound) powerUpSound.play();
+    }
+    if (powerUpActive) {
+      powerUpTimer--;
+      if (powerUpTimer <= 0) powerUpActive = false;
+    }
+    spawnPowerUp();
+    snake.death();
+    snake.update();
+    snake.show();
+
+    // Draw score
+    fill(255);
+    textSize(20);
+    textAlign(LEFT);
+    text("Score: " + score, 10, 20);
+    text("High Score: " + highScore, 10, 50);
+    if (powerUpActive) {
+      text("Slow Motion!", 10, 80);
+    }
+
+    // Draw food and power-up
+    fill(255, 50, 50);
+    ellipse(food.x + scl / 2, food.y + scl / 2, scl, scl); // Round food
+    if (powerUp) {
+      fill(255, 255, 0);
+      ellipse(powerUp.x + scl / 2, powerUp.y + scl / 2, scl * 0.8);
+    }
+  } else if (gameState === 'gameover') {
+    fill(255);
+    textSize(32);
+    textAlign(CENTER, CENTER);
+    text("Game Over", width / 2, height / 2 - 50);
+    textSize(20);
+    text("Score: " + score, width / 2, height / 2);
+    text("High Score: " + highScore, width / 2, height / 2 + 30);
+    text("Press ENTER to Restart", width / 2, height / 2 + 60);
+  } else if (paused) {
+    fill(255);
+    textSize(32);
+    textAlign(CENTER, CENTER);
+    text("Paused", width / 2, height / 2);
+    textSize(20);
+    text("Press P to Resume", width / 2, height / 2 + 30);
+  }
+}
+
+function keyPressed() {
+  if (keyCode === ENTER) {
+    if (gameState === 'start' || gameState === 'gameover') {
+      gameState = 'playing';
+      score = 0;
+      snake = new Snake();
+      pickFoodLocation();
+      powerUp = null;
+      powerUpActive = false;
+      paused = false;
+    }
+  } else if (gameState === 'playing' && (key === 'p' || key === 'P')) {
+    paused = !paused;
+  } else if (gameState === 'playing' && !paused) {
+    if ((keyCode === UP_ARROW || key === 'w' || key === 'W') && snake.yspeed !== 1) {
+      snake.dir(0, -1);
+    } else if ((keyCode === DOWN_ARROW || key === 's' || key === 'S') && snake.yspeed !== -1) {
+      snake.dir(0, 1);
+    } else if ((keyCode === RIGHT_ARROW || key === 'd' || key === 'D') && snake.xspeed !== -1) {
+      snake.dir(1, 0);
+    } else if ((keyCode === LEFT_ARROW || key === 'a' || key === 'A') && snake.xspeed !== 1) {
+      snake.dir(-1, 0);
+    }
+  }
+}
+
+function touchStarted() {
+  if (gameState === 'playing' && !paused) {
+    touchStartX = mouseX;
+    touchStartY = mouseY;
+  }
+  return false;
+}
+
+function touchEnded() {
+  if (gameState === 'playing' && !paused) {
+    let dx = mouseX - touchStartX;
+    let dy = mouseY - touchStartY;
+    if (abs(dx) > abs(dy)) {
+      if (dx > 50 && snake.xspeed !== -1) snake.dir(1, 0); // Swipe right
+      else if (dx < -50 && snake.xspeed !== 1) snake.dir(-1, 0); // Swipe left
+    } else {
+      if (dy > 50 && snake.yspeed !== -1) snake.dir(0, 1); // Swipe down
+      else if (dy < -50 && snake.yspeed !== 1) snake.dir(0, -1); // Swipe up
+    }
+  }
+  return false;
+}
+
+function Snake() {
+  this.x = 0;
+  this.y = 0;
+  this.xspeed = 1;
+  this.yspeed = 0;
+  this.total = 0;
+  this.tail = [];
+  this.smoothX = 0;
+  this.smoothY = 0;
+
+  this.dir = function(x, y) {
+    this.xspeed = x;
+    this.yspeed = y;
+  };
+
+  this.eat = function(pos) {
+    let d = dist(this.x, this.y, pos.x, pos.y);
+    if (d < scl / 2) {
+      this.total++;
+      return true;
+    }
+    return false;
+  };
+
+  this.death = function() {
+    for (let i = 0; i < this.tail.length; i++) {
+      let pos = this.tail[i];
+      let d = dist(this.x, this.y, pos.x, pos.y);
+      if (d < 1) {
+        gameState = 'gameover';
+        powerUp = null;
+        powerUpActive = false;
+      }
+    }
+  };
+
+  this.update = function() {
+    if (this.total === this.tail.length) {
+      for (let i = 0; i < this.tail.length - 1; i++) {
+        this.tail[i] = this.tail[i + 1];
+      }
+    }
+    this.tail[this.total - 1] = createVector(this.x, this.y);
+
+    this.x += this.xspeed * scl;
+    this.y += this.yspeed * scl;
+
+    this.x = constrain(this.x, 0, width - scl);
+    this.y = constrain(this.y, 0, height - scl);
+
+    // Smooth movement
+    this.smoothX = lerp(this.smoothX, this.x, 0.2);
+    this.smoothY = lerp(this.smoothY, this.y, 0.2);
+  };
+
+  this.show = function() {
+    fill(0, 255, 100); // Brighter green snake
+    for (let i = 0; i < this.tail.length; i++) {
+      rect(this.tail[i].x, this.tail[i].y, scl, scl, 4); // Rounded corners
+    }
+    rect(this.smoothX, this.smoothY, scl, scl, 4);
+  };
+}
+</script>
+</body>
+</html>
